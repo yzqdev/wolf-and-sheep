@@ -1,5 +1,14 @@
 <script setup lang="ts">
 let game: WolfGame | null = null
+
+// 游戏状态
+const GameState ={
+  WOLF_TURN: 'wolf',
+  SHEEP_TURN: 'sheep',
+  WOLF_WIN: 'wolf_win',
+  SHEEP_WIN: 'sheep_win',
+} as const
+type GameStateType =typeof GameState[keyof typeof GameState]
 // 单个棋子可能存在的值
 export type CellPiece = 'wolf' | 'sheep' | null
 
@@ -11,14 +20,16 @@ export interface GameState {
   sheepCount: number
   wolfCount: number
   turnCount: number
+  currentState: GameStateType
   cellStyle: Record<string, any> // 如果你以后想放更复杂的样式对象
   possibleMoves: PiecePosition[]
   showTrapPositions: boolean
   showDangerPositions: boolean
   board: CellPiece[][]
   boardGroup: any[] // 暂时没用到，用 any；后续再细化
+  boardSize:number
 }
-
+const BOARD_SIZE = 5
 const state: GameState = reactive({
   toggleAiText: '关闭羊AI',
   showDangerText: '显示危险区域',
@@ -30,9 +41,12 @@ const state: GameState = reactive({
   possibleMoves: [],
   showTrapPositions: false,
   showDangerPositions: false,
-  board: Array(5)
+  currentState: GameState.WOLF_TURN,
+  boardSize:BOARD_SIZE,
+  board: Array(BOARD_SIZE)
     .fill(0)
-    .map(() => Array(5).fill(null)),
+    .map(() => Array(BOARD_SIZE).fill(null)),
+
   boardGroup: [],
 })
 const {
@@ -43,6 +57,8 @@ const {
   wolfCount,
   turnCount,
   board,
+  boardSize,
+  currentState,
   boardGroup,
   cellStyle,
 } = toRefs(state)
@@ -54,22 +70,10 @@ interface PiecePosition {
 
 type JumpDir = readonly [number, number]
 
-interface IGameState {
-  WOLF_TURN: string
-  SHEEP_TURN: string
-  WOLF_WIN: string
-  SHEEP_WIN: string
-}
+
 
 const statusRef = useTemplateRef('statusRef')
 const boardRef = useTemplateRef('boardRef')
-// 游戏状态
-const GameState: IGameState = {
-  WOLF_TURN: 'wolf',
-  SHEEP_TURN: 'sheep',
-  WOLF_WIN: 'wolf_win',
-  SHEEP_WIN: 'sheep_win',
-}
 
 function getCellStyle(item: any, rowIndex: number, colIndex: number) {
   const defaultStyle: string[] = []
@@ -106,16 +110,16 @@ function getPieceStyle(item: CellPiece) {
 
 // 游戏类
 class WolfGame {
-  private readonly boardSize: number
+
   private board: any[]
-  private currentState: string
+
   private selectedPiece: PiecePosition | null = null
   private aiEnabled: boolean
 
   constructor() {
-    this.boardSize = 5
+
     this.board = []
-    this.currentState = GameState.WOLF_TURN
+
     this.selectedPiece = null
     state.possibleMoves = []
     this.aiEnabled = true
@@ -134,7 +138,7 @@ class WolfGame {
 
     // 放置羊 (前三行)
     for (let row = 0; row < 3; row++) {
-      for (let col = 0; col < this.boardSize; col++) {
+      for (let col = 0; col < state.boardSize; col++) {
         this.board[row][col] = 'sheep'
       }
     }
@@ -150,18 +154,18 @@ class WolfGame {
 
   // 处理单元格点击
   handleCellClick(row: number, col: number) {
-    if (this.currentState === GameState.WOLF_WIN || this.currentState === GameState.SHEEP_WIN) {
+    if (state.currentState === GameState.WOLF_WIN || state.currentState === GameState.SHEEP_WIN) {
       return
     }
 
     const piece = this.board[row][col]
 
     if (this.selectedPiece === null) {
-      if (this.currentState === GameState.WOLF_TURN && piece === 'wolf') {
+      if (state.currentState === GameState.WOLF_TURN && piece === 'wolf') {
         this.selectedPiece = { row, col }
         this.showPossibleMoves(row, col, 'wolf')
       } else if (
-        this.currentState === GameState.SHEEP_TURN &&
+        state.currentState === GameState.SHEEP_TURN &&
         piece === 'sheep' &&
         !this.aiEnabled
       ) {
@@ -180,19 +184,17 @@ class WolfGame {
 
         this.checkGameState()
 
-        this.currentState =
-          this.currentState === GameState.WOLF_TURN ? GameState.SHEEP_TURN : GameState.WOLF_TURN
-        console.log(this.currentState)
-        console.log('我惦记了')
-        console.log(state.turnCount)
-        if (this.currentState === GameState.SHEEP_TURN) {
+        state.currentState =
+          state.currentState === GameState.WOLF_TURN ? GameState.SHEEP_TURN : GameState.WOLF_TURN
+
+        if (state.currentState === GameState.SHEEP_TURN) {
           // 羊刚刚走完，下一轮开始
           state.turnCount++
         }
         this.updateStats()
         this.updateStatus()
 
-        if (this.currentState === GameState.SHEEP_TURN && this.aiEnabled) {
+        if (state.currentState === GameState.SHEEP_TURN && this.aiEnabled) {
           setTimeout(() => this.moveSheepAI(), 500)
         }
       } else {
@@ -264,7 +266,7 @@ class WolfGame {
 
   // 检查位置是否有效
   isValidPosition(row: number, col: number) {
-    return row >= 0 && row < this.boardSize && col >= 0 && col < this.boardSize
+    return row >= 0 && row < state.boardSize && col >= 0 && col < state.boardSize
   }
 
   // 检查是否是关键包围位置
@@ -275,8 +277,8 @@ class WolfGame {
       [0, -1],
       [0, 1],
     ]
-    for (let r = 0; r < this.boardSize; r++) {
-      for (let c = 0; c < this.boardSize; c++) {
+    for (let r = 0; r < state.boardSize; r++) {
+      for (let c = 0; c < state.boardSize; c++) {
         if (this.board[r][c] === 'wolf') {
           for (const [dr, dc] of directions) {
             if (r + dr === row && c + dc === col) {
@@ -335,8 +337,8 @@ class WolfGame {
   // 获取所有狼的位置
   getAllWolves() {
     const wolves = []
-    for (let row = 0; row < this.boardSize; row++) {
-      for (let col = 0; col < this.boardSize; col++) {
+    for (let row = 0; row < state.boardSize; row++) {
+      for (let col = 0; col < state.boardSize; col++) {
         if (this.board[row][col] === 'wolf') {
           wolves.push({ row, col })
         }
@@ -348,8 +350,8 @@ class WolfGame {
   // 获取所有羊的位置
   getAllSheep() {
     const sheep = []
-    for (let row = 0; row < this.boardSize; row++) {
-      for (let col = 0; col < this.boardSize; col++) {
+    for (let row = 0; row < state.boardSize; row++) {
+      for (let col = 0; col < state.boardSize; col++) {
         if (this.board[row][col] === 'sheep') {
           sheep.push({ row, col })
         }
@@ -384,7 +386,7 @@ class WolfGame {
 
   // 羊AI移动逻辑 - 增强安全策略
   moveSheepAI() {
-    if (this.currentState !== GameState.SHEEP_TURN || !this.aiEnabled) return
+    if (state.currentState !== GameState.SHEEP_TURN || !this.aiEnabled) return
 
     const sheepPositions = this.getAllSheep()
     if (sheepPositions.length === 0) return
@@ -476,7 +478,7 @@ class WolfGame {
     }
 
     this.checkGameState()
-    this.currentState = GameState.WOLF_TURN
+    state.currentState = GameState.WOLF_TURN
     this.updateStatus()
     this.renderBoard()
   }
@@ -486,15 +488,15 @@ class WolfGame {
     // 检查狼是否获胜
     const sheepCount = this.getAllSheep().length
     if (sheepCount === 0) {
-      this.currentState = GameState.WOLF_WIN
+      state.currentState = GameState.WOLF_WIN
       this.updateStatus()
       return
     }
 
     // 检查羊是否获胜
     let allWolvesTrapped = true
-    for (let row = 0; row < this.boardSize; row++) {
-      for (let col = 0; col < this.boardSize; col++) {
+    for (let row = 0; row < state.boardSize; row++) {
+      for (let col = 0; col < state.boardSize; col++) {
         if (this.board[row][col] === 'wolf') {
           if (this.hasAnyMove(row, col, 'wolf')) {
             allWolvesTrapped = false
@@ -506,7 +508,8 @@ class WolfGame {
     }
 
     if (allWolvesTrapped) {
-      this.currentState = GameState.SHEEP_WIN
+
+      state.currentState = GameState.SHEEP_WIN
       this.updateStatus()
     }
 
@@ -560,7 +563,7 @@ class WolfGame {
   updateStatus() {
     const statusElement = statusRef.value as HTMLDivElement
 
-    switch (this.currentState) {
+    switch (state.currentState) {
       case GameState.WOLF_TURN:
         statusElement.textContent = '狼的回合 - 请选择一只狼移动'
         statusElement.style.backgroundColor = '#ffcccc'
@@ -612,7 +615,7 @@ class WolfGame {
   // 重新开始游戏
   restart() {
     this.initBoard()
-    this.currentState = GameState.WOLF_TURN
+    state.currentState = GameState.WOLF_TURN
     this.selectedPiece = null
 
     state.turnCount = 0
@@ -696,7 +699,7 @@ function showDanger() {
           <ul>
             <li>棋盘为5×5，前三行是羊(绿色)，后一行是狼(红色)</li>
             <li>狼和羊每回合可以上下左右移动一格，不能斜着走</li>
-            <li>狼可以隔两行吃掉羊(中间必须没有障碍物)</li>
+            <li>狼可以隔一行吃掉羊(中间必须没有障碍物)</li>
             <li>狼吃掉所有羊则狼获胜</li>
             <li>羊把狼围住使其无法移动则羊获胜</li>
             <li>羊AI现在会智能地避免被吃并包围狼</li>
